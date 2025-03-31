@@ -28,17 +28,20 @@ const getAuthToken = async (apiKey, log, error) => {
 };
 
 const captureTransaction = async (authToken, transactionId, amountPiasters, log, error) => {
-  log(`paymob-capture: Capturing Txn ID: ${transactionId}, Amount: ${amountPiasters}pts`);
+  log(`paymob-capture: Attempting to capture Txn ID: ${transactionId} for Amount: ${amountPiasters}pts`);
   if (!transactionId || !amountPiasters || amountPiasters <= 0) {
     error('paymob-capture: Missing transactionId or invalid amount for capture.');
     throw new Error('Invalid input for capture: Missing transactionId or invalid amount.');
   }
   try {
-    const response = await axios.post(`${PAYMOB_API_URL}/acceptance/capture`, {
-      auth_token: authToken,
-      transaction_id: transactionId,
-      amount_cents: amountPiasters,
-    });
+    const capturePayload = {
+        auth_token: authToken,
+        transaction_id: transactionId,
+        amount_cents: amountPiasters,
+    };
+    log('paymob-capture: Sending capture payload:', JSON.stringify(capturePayload));
+
+    const response = await axios.post(`${PAYMOB_API_URL}/acceptance/capture`, capturePayload);
 
     log('Paymob capture response data:', response.data);
 
@@ -85,6 +88,7 @@ export default async ({ req, res, log, error }) => {
   }
 
   const amountPiasters = Math.round(amount * 100);
+  log(`paymob-capture: Calculated amount in piasters: ${amountPiasters}`);
 
   try {
     const authToken = await getAuthToken(apiKey, log, error);
