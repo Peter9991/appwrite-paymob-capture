@@ -65,7 +65,7 @@ const captureTransaction = async (authToken, transactionId, amountPiasters, log,
 
 export default async ({ req, res, log, error }) => {
   log("--- Executing paymob-capture function ---");
-  const apiKey = process.env.PAYMOB_API_KEY;
+  const apiKey = process.env.PAYMOB_SECRET_KEY;
 
   let transactionId;
   let amount; // Amount in EGP
