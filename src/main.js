@@ -2,50 +2,35 @@ import axios from 'axios';
 
 const PAYMOB_API_URL = 'https://accept.paymob.com/api';
 
-const getAuthToken = async (apiKey, log, error) => {
-  log('paymob-capture: Getting auth token...');
-  if (!apiKey) {
-      error('paymob-capture: API Key is missing!');
-      throw new Error('Server configuration error: Missing API Key.');
-  }
-  try {
-    const response = await axios.post(`${PAYMOB_API_URL}/auth/tokens`, { api_key: apiKey });
-    if (response.data && response.data.token) {
-      log('paymob-capture: Got auth token.');
-      return response.data.token;
-    } else {
-      const errMsg = response.data ? JSON.stringify(response.data) : 'Invalid auth response';
-      error(`paymob-capture: Failed to get auth token: ${errMsg}`);
-      log('Paymob auth response:', response.data);
-      throw new Error(`Paymob Auth Failed: ${errMsg}`);
-    }
-  } catch (err) {
-    const errMsg = err.response?.data?.message || err.response?.data?.detail || err.message;
-    error(`paymob-capture: Error getting auth token: ${errMsg}`);
-    if (err.response?.data) log('Paymob auth error details:', err.response.data);
-    throw new Error(`Paymob Auth Request Failed: ${errMsg}`);
-  }
-};
-
-const captureTransaction = async (authToken, transactionId, amountPiasters, log, error) => {
+const captureTransaction = async (secretKey, transactionId, amountPiasters, log, error) => {
   log(`paymob-capture: Attempting to capture Txn ID: ${transactionId} for Amount: ${amountPiasters}pts`);
+  if (!secretKey) {
+    error('paymob-capture: Secret Key is missing!');
+    throw new Error('Server configuration error: Missing Secret Key.');
+  }
   if (!transactionId || !amountPiasters || amountPiasters <= 0) {
     error('paymob-capture: Missing transactionId or invalid amount for capture.');
     throw new Error('Invalid input for capture: Missing transactionId or invalid amount.');
   }
   try {
     const capturePayload = {
-        auth_token: authToken,
-        transaction_id: transactionId,
+        transaction_id: transactionId.toString(),
         amount_cents: amountPiasters,
     };
     log('paymob-capture: Sending capture payload:', JSON.stringify(capturePayload));
 
-    const response = await axios.post(`${PAYMOB_API_URL}/acceptance/capture`, capturePayload);
+    const response = await axios.post(
+      `${PAYMOB_API_URL}/acceptance/capture`, 
+      capturePayload,
+      {
+        headers: { 'Authorization': `Token ${secretKey}` }
+      }
+    );
 
     log('Paymob capture response data:', response.data);
 
-    const isSuccess = response.status >= 200 && response.status < 300;
+    // A successful capture returns a 201 Created status
+    const isSuccess = response.status === 201;
 
     if (isSuccess) {
         log(`paymob-capture: Paymob API reported SUCCESS for capture of Txn ID: ${transactionId}`);
@@ -65,7 +50,11 @@ const captureTransaction = async (authToken, transactionId, amountPiasters, log,
 
 export default async ({ req, res, log, error }) => {
   log("--- Executing paymob-capture function ---");
-  const apiKey = process.env.PAYMOB_SECRET_KEY;
+  const secretKey = process.env.PAYMOB_SECRET_KEY;
+  if (!secretKey) {
+    error('paymob-capture: FATAL: PAYMOB_SECRET_KEY is not set.');
+    return res.json({ success: false, error: 'Server configuration error.' }, 500);
+  }
 
   let transactionId;
   let amount; // Amount in EGP
@@ -91,8 +80,7 @@ export default async ({ req, res, log, error }) => {
   log(`paymob-capture: Calculated amount in piasters: ${amountPiasters}`);
 
   try {
-    const authToken = await getAuthToken(apiKey, log, error);
-    const captureSuccess = await captureTransaction(authToken, transactionId, amountPiasters, log, error);
+    await captureTransaction(secretKey, transactionId, amountPiasters, log, error);
 
     log(`paymob-capture: Successfully processed capture for Txn ID: ${transactionId}`);
     return res.json({ success: true });
