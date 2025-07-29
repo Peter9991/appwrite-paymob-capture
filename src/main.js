@@ -2,6 +2,61 @@ import axios from 'axios';
 
 const PAYMOB_API_URL = 'https://accept.paymob.com/api';
 
+// SECURITY: Configure axios with security settings
+const secureAxios = axios.create({
+  timeout: 30000, // 30 second timeout
+  headers: {
+    'Content-Type': 'application/json',
+    'User-Agent': 'HealthyU-Paymob-Capture/1.0'
+  }
+});
+
+// SECURITY: Add request interceptor for logging
+secureAxios.interceptors.request.use(
+  (config) => {
+    // Log request for security monitoring
+    console.log(`[SECURITY] Paymob API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    return config;
+  },
+  (error) => {
+    console.error('[SECURITY] Paymob API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// SECURITY: Add response interceptor for error handling
+secureAxios.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    console.error('[SECURITY] Paymob API Response Error:', error.response?.status, error.message);
+    return Promise.reject(error);
+  }
+);
+
+// SECURITY: Input validation and sanitization
+const sanitizeInput = (input) => {
+  if (typeof input === 'string') {
+    return input.trim().replace(/[<>]/g, ''); // Remove potential XSS characters
+  }
+  return input;
+};
+
+const validateTransactionId = (transactionId) => {
+  if (typeof transactionId !== 'string' || transactionId.length < 1 || transactionId.length > 100) {
+    throw new Error('Invalid transaction ID: must be a string between 1-100 characters');
+  }
+  return sanitizeInput(transactionId);
+};
+
+const validateAmount = (amount) => {
+  if (typeof amount !== 'number' || amount <= 0 || amount > 1000000) {
+    throw new Error('Invalid amount: must be a positive number less than 1,000,000');
+  }
+  return amount;
+};
+
 const captureTransaction = async (secretKey, transactionId, amountPiasters, log, error) => {
   log(`paymob-capture: Attempting to capture Txn ID: ${transactionId} for Amount: ${amountPiasters}pts`);
   if (!secretKey) {
@@ -19,7 +74,7 @@ const captureTransaction = async (secretKey, transactionId, amountPiasters, log,
     };
     log('paymob-capture: Sending capture payload:', JSON.stringify(capturePayload));
 
-    const response = await axios.post(
+    const response = await secureAxios.post(
       `${PAYMOB_API_URL}/acceptance/capture`, 
       capturePayload,
       {
@@ -61,14 +116,11 @@ export default async ({ req, res, log, error }) => {
   try {
     if(!req.body) throw new Error('Request body is missing.');
     const bodyData = JSON.parse(req.body);
-    transactionId = bodyData.transactionId;
-    amount = bodyData.amount;
-    if (!transactionId || typeof transactionId !== 'string') {
-        throw new Error(`Invalid transactionId received: ${transactionId}`);
-    }
-    if (typeof amount !== 'number' || amount <= 0) {
-      throw new Error(`Invalid amount received: ${amount}`);
-    }
+    
+    // SECURITY: Validate and sanitize all inputs
+    transactionId = validateTransactionId(bodyData.transactionId);
+    amount = validateAmount(bodyData.amount);
+    
     log(`paymob-capture: Received capture request: TxnID=${transactionId}, Amount=${amount} EGP`);
   } catch (parseError) {
     error("paymob-capture: Invalid request body: " + parseError.message);
