@@ -84,8 +84,8 @@ const captureTransaction = async (secretKey, transactionId, amountPiasters, log,
 
     log('Paymob capture response data:', response.data);
 
-    // A successful capture returns a 201 Created status
-    const isSuccess = response.status === 201;
+    // A successful capture can return 200 OK or 201 Created status
+    const isSuccess = response.status === 200 || response.status === 201;
 
     if (isSuccess) {
         log(`paymob-capture: Paymob API reported SUCCESS for capture of Txn ID: ${transactionId}`);
@@ -104,7 +104,11 @@ const captureTransaction = async (secretKey, transactionId, amountPiasters, log,
 };
 
 export default async ({ req, res, log, error }) => {
-  log("--- Executing paymob-capture function ---");
+  log("=== 🔍 EXECUTING PAYMOB-CAPTURE FUNCTION ===");
+  log(`paymob-capture: Request method: ${req.method}`);
+  log(`paymob-capture: Request headers:`, JSON.stringify(req.headers));
+  log(`paymob-capture: Raw request body:`, req.body);
+  
   const secretKey = process.env.PAYMOB_SECRET_KEY;
   if (!secretKey) {
     error('paymob-capture: FATAL: PAYMOB_SECRET_KEY is not set.');
@@ -112,27 +116,26 @@ export default async ({ req, res, log, error }) => {
   }
 
   let transactionId;
-  let amount; // Amount in EGP
+  let amountCents; // Amount in piasters (cents)
   try {
     if(!req.body) throw new Error('Request body is missing.');
     const bodyData = JSON.parse(req.body);
     
     // SECURITY: Validate and sanitize all inputs
     transactionId = validateTransactionId(bodyData.transactionId);
-    amount = validateAmount(bodyData.amount);
+    amountCents = validateAmount(bodyData.amountCents); // Fixed: expect amountCents from frontend
     
-    log(`paymob-capture: Received capture request: TxnID=${transactionId}, Amount=${amount} EGP`);
+    log(`paymob-capture: Received capture request: TxnID=${transactionId}, AmountCents=${amountCents}`);
   } catch (parseError) {
     error("paymob-capture: Invalid request body: " + parseError.message);
     log("Request Body Received:", req.body);
     return res.json({ success: false, error: `Invalid request body: ${parseError.message}` }, 400);
   }
 
-  const amountPiasters = Math.round(amount * 100);
-  log(`paymob-capture: Calculated amount in piasters: ${amountPiasters}`);
+  log(`paymob-capture: Using amount in piasters: ${amountCents}`);
 
   try {
-    await captureTransaction(secretKey, transactionId, amountPiasters, log, error);
+    await captureTransaction(secretKey, transactionId, amountCents, log, error);
 
     log(`paymob-capture: Successfully processed capture for Txn ID: ${transactionId}`);
     return res.json({ success: true });
